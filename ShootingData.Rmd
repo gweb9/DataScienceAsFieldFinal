@@ -1,0 +1,158 @@
+---
+title: "ShootingData"
+author: "Vincent Webster"
+date: "2024-11-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+```
+
+# NYPD Shooting Incident Data
+We are looking at NYPD Shooting Incident data from the link. We want to figure out what age groups commit the most shootings? When are shootings most common in the year? What city has the most shootings? We will then predict the amount of shootings that will occur in 2024 based on our data that only has up to 2023. 
+<https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic>
+
+```{r, echo = FALSE}
+shooting_data <- read_csv("NYPD_Shooting_Incident_Data__Historic_.csv")
+```
+### The data being looked at
+
+Below is a summary of the data. 
+
+```{r}
+summary(shooting_data)
+```
+
+### Data Cleanup
+
+First we need to delete the columns of data we don't need. We deleted X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat, LOCATION_DESC, INCIDENT_KEY, OCCUR_TIME. These columns did not seem necessary for our analysis. 
+
+```{r tidy_shooting_data, echo = TRUE}
+shooting_data_cleaned <- shooting_data %>%
+    select(-c(X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat, LOCATION_DESC, INCIDENT_KEY, OCCUR_TIME))
+```
+
+```{r}
+summary(shooting_data_cleaned)
+```
+
+We now need to clean up the rest of the data with the appropriate variables to factor and data types.
+
+```{r tidy_shooting_data_cleaned, echo = TRUE}
+shooting_data_cleaned <- shooting_data_cleaned %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%  
+  
+  mutate(
+      BORO = factor(BORO),
+      LOC_OF_OCCUR_DESC = factor(LOC_OF_OCCUR_DESC),
+      LOC_CLASSFCTN_DESC = factor(LOC_CLASSFCTN_DESC),
+      PRECINCT = factor(PRECINCT),
+      JURISDICTION_CODE = factor(JURISDICTION_CODE),
+      STATISTICAL_MURDER_FLAG = factor(STATISTICAL_MURDER_FLAG),
+      PERP_AGE_GROUP = factor(PERP_AGE_GROUP),
+      PERP_SEX = factor(PERP_SEX),
+      PERP_RACE = factor(PERP_RACE),
+      VIC_AGE_GROUP = factor(VIC_AGE_GROUP),
+      VIC_SEX = factor(VIC_SEX),
+      VIC_RACE = factor(VIC_RACE),
+    )
+```
+
+Here is the new report summary
+
+```{r}
+summary(shooting_data_cleaned)
+```
+### Data Visualization and Analysis
+Now we are going to look at some charts that show how many shootings occurred in each city in descending order and we will look at shootings per age group.
+
+```{r plot-wider, fig.width=10, fig.height=4}
+crime_city_counts <- table(shooting_data_cleaned$BORO)
+sorted_crime_cities <- sort(crime_city_counts, decreasing = TRUE)
+barplot(sorted_crime_cities, main = "Shootings Per City", xlab = "City", ylab = "Number of Shootings")
+print(sorted_crime_cities)
+```
+```{r crimes_per_age, fig.width=10, fig.height=4}
+crime_age_counts <- table(shooting_data_cleaned$PERP_AGE_GROUP)
+filter_ages <- crime_age_counts[names(crime_age_counts) %in% c("25-44", "18-24", "<18", "45-64", "65+")]
+sorted_crime_age <- sort(filter_ages, decreasing = TRUE)
+barplot(sorted_crime_age,
+main = "Crimes Per Age", 
+xlab = "Age Group", 
+ylab = "Number of Crimes"
+)
+print(sorted_crime_age)
+```
+
+Now lets do some analysis and see which month has the worst amount of shooting. 
+
+```{r}
+shooting_data_month <- shooting_data_cleaned$OCCUR_DATE
+shooting_by_month <- format(shooting_data_month, "%m")
+count_per_month <- table(shooting_by_month)
+df_per_month <- as.data.frame(count_per_month)
+names(df_per_month) <- c("Month", "Count")
+
+plot(x = as.numeric(df_per_month$Month),
+y = df_per_month$Count,
+main = "Shootings by Month",
+xlab = "Month", 
+ylab = "Amount of Shootings",
+type = "b",
+xaxt = "n"
+)
+axis(1, at = 1:12, labels = month.abb)
+print(df_per_month)
+```
+
+
+The Graphs shows that the month with the highest amount of shootings was July. It also shows that the summer months have the highest average amount of shootings. The month with the lowest amount of shootings was November and the graph also shows that the winter months have the lowest amount of shootings on average.
+
+From this data I think it would be good to understand where these shootings are taking place. I think it would also be good to understand if other types of crime are also high during these months and these age groups. 
+
+
+### Data Model
+
+Lets try to predict the total amount of shootings in 2024 the data from every year. We do this counting the number of shootings per year. Then we do a linear regression model on it. Then we use the predict function to predict what it will likely be in 2024.
+
+First lets find the number of shootings for each year
+
+```{r}
+shooting_data_year <- shooting_data_cleaned$OCCUR_DATE
+shooting_by_year <- format(shooting_data_year, "%Y")
+count_per_year <- table(shooting_by_year)
+df_per_year <- as.data.frame(count_per_year)
+names(df_per_year) <- c("Year", "Count")
+print(df_per_year)
+```
+
+Now lets predict what it will be for 2024
+
+```{r}
+
+df_per_year$Year <- as.numeric(as.character(df_per_year$Year))
+
+model <- lm(Count ~ Year, data = df_per_year)
+
+next_year <- max(df_per_year$Year)+1
+prediction <- predict(model, newdata = data.frame(Year = next_year))
+cat("The predicted number of shootings for", next_year, "is:", prediction)
+```
+
+### Conclusion 
+
+Overall, the data showed that summer months there is typically more crime. It showed that 18-24 was the most likely age group to commit a shooting. It also showed that Brooklyn has the most shootings. We then figured there will most likely be around 1255 shootings in 2024. 
+
+### Data Bias
+
+A big potential bias in the data is if police stations are reporting their data correctly.They may alter the facts about certain situations to help make their areas look better than they are. Lastly, large blocks of data did not have dates attached to them, so with that missing information the results may be different. 
+
+My personal Bias in the data was thinking that low income cities would have more shootings. To mitigate this I just let the data analysis show the results. I also realize that lower income cities typically have more policing and in results have more discovered crime. 
+
+
+
+
+

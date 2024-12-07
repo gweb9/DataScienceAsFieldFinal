@@ -1,0 +1,185 @@
+---
+title: "COVID-19 California Data"
+author: "Vincent Webster"
+date: "2024-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+```
+
+# Covid-19 California Data
+In the report below we are viewing Covid-19 virus case and death data from the United States from 2020 to 2023. In this report we were interested in looking at the statistics from California. In this report we will look at what counties in California experienced the most cases. We will also see what counties had the most Covid-19 cases by a percentage of their overall population. Later in the report we will use our data and predict how many cases Los Angeles county should expect in 2024.  
+
+
+## The Covid-19 Data
+Below is the data we will be looking at. It comes from <https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/> and we will be looking at the US confirmed cases and US confirmed deaths.
+
+```{r, echo = FALSE}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+file_names <- c("time_series_covid19_confirmed_US.csv",  "time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_US.csv",  "time_series_covid19_deaths_global.csv")
+urls <- str_c(url_in,file_names)
+```
+
+```{r import_data, echo = FALSE}
+US_cases <- read_csv(urls[1])
+US_deaths <- read_csv(urls[3])
+```
+
+## Data Cleanup
+After importing the Covid-19 cases and death data we need to reorganize our data to make it more useful. First we need to delete the columns that are unnecessary which were Lat, Long, and Combined_Key. After this for each data frame we need to reorganize the data to make the date columns into rows. After this we combine the case and death data frames into a master US data frame.  
+
+```{r, echo = TRUE, warning=FALSE}
+US_cases <- US_cases %>%
+    pivot_longer(cols = -(UID:Combined_Key),
+                  names_to = "date",
+                  values_to = "cases") %>%
+    select(Admin2:cases) %>%
+    mutate(date = dmy(date)) %>%
+    select(-c(Lat, Long_, Combined_Key)) %>%
+    na.omit()
+
+```
+
+```{r, echo = TRUE, warning=FALSE}
+US_deaths2 <- US_deaths %>%
+    pivot_longer(cols =  -(UID:Population),
+                  names_to = "date",
+                  values_to = "deaths") %>%
+    mutate(date = dmy(as.character(date))) %>%
+    select(-c(Lat, Long_, Combined_Key, UID, iso2, iso3, code3, FIPS)) %>%
+    filter(!is.na(date))
+  
+```
+
+```{r, echo = TRUE, warning=FALSE}
+US <- US_cases %>%
+    full_join(US_deaths2)
+
+```
+After we join the two dataframes we then update with only data from California. To do this we implemented the code below. 
+
+```{r, echo = TRUE}
+CA <- US %>%
+  filter(Province_State == "California") %>%
+  filter(Population > 0)
+```
+
+Below is a summary of our new data.
+
+```{r, echo = TRUE}
+summary(CA)
+```
+
+## Data Visualization and Analysis
+Our goal is to see the areas with the highest number of cases in California and we also wanted to see what areas had the highest percentages of cases in California. 
+
+Below is the code that we used to create a bar plot of the number of cases of the highest 5 counties in California. 
+
+```{r, echo = TRUE}
+CA_max_cases <- CA %>%
+  group_by(Admin2) %>%
+  summarize(max_county = max(cases))%>%
+  arrange(desc(max_county))
+
+top5 <- head(CA_max_cases, 5)
+
+barplot(
+  top5$max_county,
+  names.arg = top5$Admin2,
+  main = "Max Cases Per County",
+  xlab = "County", 
+  ylab = "Number of Cases"
+)
+```
+Below is the exact number of Covid cases for the 5 highest counties. 
+```{r, echo = TRUE}
+top5 <- top5 %>%
+  rename(County = Admin2, Max_Cases = max_county)
+```
+```{r, echo = TRUE}
+print(top5)
+```
+As you can see from the chart that Los Angeles had the highest amount of cases and then there is a drastic drop off and then the next 4 highest are San Diego, Orange County, Riverside, and San Bernardino. I think it makes sense that major california counties would have the most number of cases because they have the highest populations in the state. I think another consideration that needs to be taken into account is understanding that some counties are bigger than other counties and inherently have more people in them. So, after looking at this data I wanted to see the counties with the worst Covid case rate by their population.
+
+Below is the code that will calculate the 5 counties with the highest amount of cases based on a percetage of their population. 
+
+```{r, echo = TRUE}
+cases_per_mill <- CA %>%
+  group_by(Admin2) %>%
+  reframe(Cases_by_county = max(cases), Population = last(Population))%>%
+  mutate(case_per = 100*(Cases_by_county/ Population))%>%
+  arrange(desc(case_per))
+
+top5per <- head(cases_per_mill, 5)
+
+barplot(
+  top5per$case_per,
+  names.arg = top5per$Admin2,
+  main = "Cases by Percentage of Population",
+  xlab = "County", 
+  ylab = "Percentage of Population",
+  ylim = c(0,60)
+)
+  
+```
+```{r, echo = TRUE}
+top5per <- top5per %>%
+  rename(County = Admin2, Max_Cases = Cases_by_county, Percentage_of_Population = case_per)
+```
+
+Below is the exact percentages of the 5 counties with the highest Covid cases based on their population. 
+
+```{r, echo = TRUE}
+print(top5per)
+```
+As you can see looking at just total number of cases is not a good indicator of how bad the Covid outbreak is in each county. From the bar chart above you can see that Imperial County has the highest percentage of cases based on their population at about 49%. This is a smaller county, but I do find it interesting that Los Angeles county still is 4th on the list. Overall I think this data is interesting because it shows which areas have the worst outbreaks and the likelihood of an individual attracting Covid. 
+
+From this data I think it would be good to know what counties had the fastest outbreaks based on a percentage of their population. 
+
+
+
+## Data Modeling 
+
+The data we have covers the cases and deaths from Covid between the years 2020 to 2023. We would like to find the number of cases Los Angeles county should expect at the end of 2024. To do this we will run a regression model on our previous data and that will help use predict what Los Angeles county should expect by the end of 2024. 
+
+Below is the code we used to predict the Los Angeles county 2024 cases. 
+
+```{r, echo = TRUE}
+CA_Los_Angeles <- CA %>%
+  filter(Admin2 == "Los Angeles") %>%
+  filter(Population > 0)
+```
+
+```{r, echo = TRUE}
+CA_Los_Angeles_year <- CA_Los_Angeles %>%
+  mutate(year = year(date))%>%
+  group_by(year)%>%
+  summarize(max_cases = max(cases))
+```
+
+```{r, echo = TRUE}
+
+CA_Los_Angeles_year$year <- as.numeric(as.character(CA_Los_Angeles_year$year))
+
+model <- lm(max_cases ~ year, data = CA_Los_Angeles_year)
+
+next_year <- max(CA_Los_Angeles_year$year)+1
+prediction <- predict(model, newdata = data.frame(year = next_year))
+cat("The amount of cases at the end of", next_year, "will be:", prediction)
+```
+As you can see the predicted cases for Los Angeles county at the end of 2024 is 5,246,679 cases. 
+
+## Data Bias
+
+I think there are few sources of bias in this report. I think the biggest source of bias is if people reported having Covid. In some areas it may be harder to get tested for Covid than others and this could make it seem like some areas have no Covid cases compared to others. Another bias in the data is some areas may not report their actual covid cases because it may look bad politically, so they don't report the actual numbers. Lastly, there were many rows of data that weren't input correctly and during the data cleanup they were removed. This removed data that could have changed the results of our analysis. 
+
+My personal bias while looking at the data was assuming that large cities would have the most cases and most cases based on their population. I thought they would have the most number of cases because they are the most populated areas. I also thought large cities would have the largest percentage of cases based on their population because people are more densely together making the spread of Covid easier than smaller towns. As you can see in the results I was extremely wrong on my second bias. 
+
+## Conclusion
+
+Overall this report showed us that Los Angeles county had the most number Covid cases. It also showed that Imperial county had the highest percentage of cases based on their population. Lastly, Los Angeles county should expect to have 5,236,679 Covid cases by the end of 2024. 
